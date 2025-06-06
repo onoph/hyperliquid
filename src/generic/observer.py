@@ -35,6 +35,8 @@ class HyperliquidObserver:
         self.hyperliquid_ws.start_watch()
 
     def stop(self):
+        print("Stopping HyperliquidObserver...")
+        self.running = False
         if self.hyperliquid_ws.ws:
             self.hyperliquid_ws.ws.close()
 
@@ -56,33 +58,63 @@ class HyperliquidWebSocket:
         self.url = url
         self.address = address
         self.observer = observer
+        self.ws = None
+        self.running = False
+        self.reconnect_count = 0
+        self.max_reconnect_attempts = 10
+        self.reconnect_delay = 1  # délai initial en secondes
+        self._setup_websocket()
+
+    def _setup_websocket(self):
         self.ws = websocket.WebSocketApp(
-            url,
+            self.url,
             on_message=self.on_message,
             on_error=self.on_error,
             on_close=self.on_close,
             on_open=self.on_open
         )
 
+
     def start_watch(self):
+        self.running = True
+        threading.Thread(target=self._run_websocket, daemon=True).start()
+
+    def _run_websocket(self):
         websocket.enableTrace(False)
-        #self.ws.run_forever(sslopt={"context": ssl.create_default_context(cafile=certifi.where())})
-        self.ws.run_forever(
-            sslopt={"cert_reqs": ssl.CERT_REQUIRED, "ca_certs": certifi.where()},
-            #ping_interval=10,
-            #ping_timeout=5
-        )
+        while self.running:
+            try:
+                self.ws.run_forever(
+                    sslopt={"cert_reqs": ssl.CERT_REQUIRED, "ca_certs": certifi.where()},)
+
+                if not self.running:
+                    break
+            except Exception as e:
+                print(f"WebSocket error: {e}")
+                self._attempt_reconnect()
+
+    def _attempt_reconnect(self):
+        if self.reconnect_count >= self.max_reconnect_attempts:
+            print(f"Échec après {self.reconnect_count} tentatives de reconnexion. Abandon.")
+            self.running = False
+            return
+
+        delay = min(60, self.reconnect_delay * (2 ** self.reconnect_count))  # Exponential backoff
+        print(f"Tentative de reconnexion dans {delay:.2f} secondes...")
+        time.sleep(delay)
+        self.reconnect_count += 1
+        print(f"Tentative de reconnexion #{self.reconnect_count}...")
+
+        # Recréer un nouveau WebSocketApp pour la reconnexion
+        self._setup_websocket()
 
     def on_message(self, ws, message):
         msg = json.loads(message)
         channel = msg.get("channel")
         if channel == "orderUpdates":
-            # retrieves a list of order updates
             order_updates = safe_parse(WsMessage[WsOrder], msg)
             self.observer.handle_order_updates(order_updates.data)
-        else:
-            print("Autre message :", msg)
-
+        #else:
+        #    ("Autre message :", msg)
 
     def on_error(self, ws, error):
         print("Erreur :", error)
@@ -91,6 +123,10 @@ class HyperliquidWebSocket:
         print("WebSocket fermé :", close_status_code, close_msg)
 
     def on_open(self, ws):
+        print("WebSocket connecté avec succès")
+        self.reconnect_count = 0
+
+        # subscribe to updates
         user_address = self.address
         subscription_message = {
             "method": "subscribe",

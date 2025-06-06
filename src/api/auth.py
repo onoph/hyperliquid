@@ -2,12 +2,16 @@
 
 import os
 from typing import Optional
+
+from dotenv.main import DotEnv
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 
 security = HTTPBasic()
-
 
 def get_auth_credentials() -> tuple[str, str]:
     """Get authentication credentials from environment variables.

@@ -12,7 +12,9 @@ from src.api.models import (
     ObserverStartRequest,
     ObserverResponse,
     ObserverStatusResponse,
-    HealthResponse
+    HealthResponse,
+    LogLevelRequest,
+    LogLevelResponse
 )
 from src.api.service import observer_service, ObserverInstance
 
@@ -23,6 +25,55 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Valid log levels
+VALID_LOG_LEVELS = {
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARNING': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL
+}
+
+
+def get_current_log_level() -> str:
+    """Get the current root logger level as a string."""
+    root_logger = logging.getLogger()
+    level = root_logger.getEffectiveLevel()
+    
+    # Convert numeric level back to string
+    for level_name, level_value in VALID_LOG_LEVELS.items():
+        if level_value == level:
+            return level_name
+    return f"UNKNOWN({level})"
+
+
+def set_log_level(level_name: str) -> bool:
+    """Set the log level for all loggers.
+    
+    Args:
+        level_name: The log level name (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+        
+    Returns:
+        bool: True if the level was set successfully, False otherwise.
+    """
+    level_name = level_name.upper()
+    
+    if level_name not in VALID_LOG_LEVELS:
+        return False
+    
+    level = VALID_LOG_LEVELS[level_name]
+    
+    # Set root logger level
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    
+    # Set level for all existing loggers
+    for logger_name in logging.Logger.manager.loggerDict:
+        existing_logger = logging.getLogger(logger_name)
+        existing_logger.setLevel(level)
+    
+    return True
 
 
 @asynccontextmanager
@@ -55,6 +106,69 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status="healthy",
         active_observers=active_count
+    )
+
+
+@app.get("/logs/level", response_model=LogLevelResponse)
+async def get_log_level(
+    user: str = Depends(authenticate_user)
+) -> LogLevelResponse:
+    """Get the current log level.
+    
+    Args:
+        user: Authenticated user (from dependency injection).
+        
+    Returns:
+        LogLevelResponse: Current log level information.
+    """
+    current_level = get_current_log_level()
+    
+    return LogLevelResponse(
+        success=True,
+        message=f"Current log level is {current_level}",
+        current_level=current_level
+    )
+
+
+@app.post("/logs/level", response_model=LogLevelResponse)
+async def set_log_level_endpoint(
+    request: LogLevelRequest,
+    user: str = Depends(authenticate_user)
+) -> LogLevelResponse:
+    """Set the global log level.
+    
+    Args:
+        request: Log level change request.
+        user: Authenticated user (from dependency injection).
+        
+    Returns:
+        LogLevelResponse: Response with success status and current level.
+        
+    Raises:
+        HTTPException: If the log level is invalid.
+    """
+    level_name = request.level.upper()
+    
+    if level_name not in VALID_LOG_LEVELS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid log level. Valid levels are: {', '.join(VALID_LOG_LEVELS.keys())}"
+        )
+    
+    success = set_log_level(level_name)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to set log level"
+        )
+    
+    logger.info(f"User {user} changed log level to {level_name}")
+    
+    return LogLevelResponse(
+        success=True,
+        message=f"Log level successfully changed to {level_name}",
+        current_level=level_name
     )
 
 

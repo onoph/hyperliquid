@@ -1,3 +1,4 @@
+import logging
 import dacite
 from dacite import Config
 from dacite.data import Data
@@ -9,6 +10,8 @@ import numbers
 
 from src.generic.cctx_balance_model import AccountData
 from src.generic.cctx_model import Order
+
+logger = logging.getLogger(__name__)
 
 def parse_order(api_data) -> Order:
     # Définir les valeurs par défaut pour les champs obligatoires
@@ -39,14 +42,14 @@ def safe_parse(data_class: Type[T], data: Dict[str, Any], default_values: Option
     processed_data = {} if data is None else data.copy()
 
     try:
-        print(f"[MAPPER] Tentative de parsing {data_class.__name__} avec data={processed_data}")
+        logger.debug(f"[MAPPER] Tentative de parsing {data_class.__name__} avec data={processed_data}")
         return from_dict(
             data_class=data_class,
             data=processed_data,
             config=_create_config()
         )
     except dacite.exceptions.MissingValueError as e:
-        print(f"[MAPPER] MissingValueError: {e}")
+        logger.debug(f"[MAPPER] MissingValueError: {e}")
         # Si erreur, récupérer le chemin du champ manquant
         field_path = str(e).split("missing value for field ")[-1].strip('"')
 
@@ -61,7 +64,7 @@ def safe_parse(data_class: Type[T], data: Dict[str, Any], default_values: Option
         # Remplir automatiquement les champs manquants avec des valeurs vides
         _fill_missing_fields(data_class, processed_data)
 
-        print(f"[MAPPER] Nouvelle tentative de parsing {data_class.__name__} avec data={processed_data}")
+        logger.debug(f"[MAPPER] Nouvelle tentative de parsing {data_class.__name__} avec data={processed_data}")
         return from_dict(
             data_class=data_class,
             data=processed_data,
@@ -73,21 +76,21 @@ def _safe_float(x):
     try:
         return 0.0 if x is None or x == "" else float(x)
     except (ValueError, TypeError):
-        print(f"[MAPPER] Fallback float pour valeur: {x!r}")
+        logger.debug(f"[MAPPER] Fallback float pour valeur: {x!r}")
         return 0.0
 
 def _safe_int(x):
     try:
         return 0 if x is None or x == "" else int(x)
     except (ValueError, TypeError):
-        print(f"[MAPPER] Fallback int pour valeur: {x!r}")
+        logger.debug(f"[MAPPER] Fallback int pour valeur: {x!r}")
         return 0
 
 def _safe_bool(x):
     try:
         return False if x is None or x == "" else bool(x)
     except (ValueError, TypeError):
-        print(f"[MAPPER] Fallback bool pour valeur: {x!r}")
+        logger.debug(f"[MAPPER] Fallback bool pour valeur: {x!r}")
         return False
 
 def _create_config():

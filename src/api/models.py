@@ -32,4 +32,18 @@ class HealthResponse(BaseModel):
     """Response model for health check."""
     
     status: str = Field(..., description="API health status")
-    active_observers: int = Field(..., description="Number of active observers") 
+    active_observers: int = Field(..., description="Number of active observers")
+
+
+class LogLevelRequest(BaseModel):
+    """Request model for changing log level."""
+    
+    level: str = Field(..., description="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+
+
+class LogLevelResponse(BaseModel):
+    """Response model for log level operations."""
+    
+    success: bool = Field(..., description="Whether the operation was successful")
+    message: str = Field(..., description="Response message")
+    current_level: str = Field(..., description="Current log level") 

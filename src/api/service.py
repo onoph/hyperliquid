@@ -7,6 +7,7 @@ import uuid
 from typing import Dict, Optional
 from dataclasses import dataclass
 
+from src.generic.cctx_api import Dex
 from src.generic.observer import HyperliquidObserver
 from src.generic.algo import Algo
 
@@ -59,7 +60,7 @@ class ObserverService:
             try:
                 # Create algorithm instance (you may want to use a factory here)
                 algo = self._create_algo(algo_type)
-                
+                algo.recover_previous_state()
                 # Create observer
                 observer = HyperliquidObserver(address=address, algo=algo)
                 
@@ -159,21 +160,11 @@ class ObserverService:
                 self.stop_observer(observer_id)
     
     def _create_algo(self, algo_type: str) -> Algo:
-        """Create an algorithm instance based on type.
-        
-        Args:
-            algo_type: The type of algorithm to create.
-            
-        Returns:
-            Algo: An algorithm instance.
-            
-        Raises:
-            ValueError: If the algorithm type is not supported.
-        """
         if algo_type == "default":
             # You'll need to adjust this based on your Algo constructor
             # For now, using placeholder values
-            return Algo(symbol="BTC", marginCoin="USDC")
+            dex = Dex(symbol="BTC", marginCoin="USDC")
+            return Algo(dex)
         else:
             raise ValueError(f"Unsupported algorithm type: {algo_type}")
     
