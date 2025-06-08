@@ -59,14 +59,15 @@ class ExecutedOrdersTracker:
 # - quantité adaptative
 #   - PERP funds / 6 / prix BTC
 
-from hyperliquid.ccxt.base.types import OrderSide
-from typing import Optional
+from typing import Optional, Literal
 
 from src.generic.cctx_api import Dex
 from src.generic.cctx_model import Order
 
 import logging
 
+# Types pour les côtés d'ordre
+OrderSide = Literal['buy', 'sell']
 BUY: OrderSide = 'buy'
 SELL: OrderSide = 'sell'
 
