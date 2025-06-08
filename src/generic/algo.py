@@ -53,7 +53,6 @@ class ExecutedOrdersTracker:
 #
 # - quand un short est executé :
 #   - Idem
-from IPython.core.events import available_events
 #   principe pour la quantité achetée sur un long :
 #
 # objectif : éloigner la liquidation
