@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 # Ajouter le répertoire du projet au PYTHONPATH
-project_home = '/home/yourusername/hyperliquid'  # Remplacez par votre nom d'utilisateur
+project_home = '/home/xph/hyperliquid'  # Remplacez par votre nom d'utilisateur
 if project_home not in sys.path:
     sys.path.insert(0, project_home)
 
