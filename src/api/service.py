@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from src.generic.cctx_api import Dex
 from src.generic.observer import HyperliquidObserver
 from src.generic.algo import Algo
+from src.data.db.sqlite_data_service import SQLiteDataService
 
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,8 @@ class ObserverService:
             # You'll need to adjust this based on your Algo constructor
             # For now, using placeholder values
             dex = Dex(symbol="BTC", marginCoin="USDC")
-            return Algo(dex)
+            data_service = SQLiteDataService("data/observations.db")
+            return Algo(dex, data_service)
         else:
             raise ValueError(f"Unsupported algorithm type: {algo_type}")
     

@@ -1,10 +1,10 @@
 """Main FastAPI application for the Hyperliquid Observer API."""
 
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Query
 from fastapi.responses import JSONResponse
 
 from src.api.auth import authenticate_user
@@ -14,9 +14,15 @@ from src.api.models import (
     ObserverStatusResponse,
     HealthResponse,
     LogLevelRequest,
-    LogLevelResponse
+    LogLevelResponse,
+    SessionsResponse,
+    SessionInfo,
+    EventsResponse,
+    EventInfo
 )
 from src.api.service import observer_service, ObserverInstance
+from src.data.db.sqlite_data_service import SQLiteDataService
+import json
 
 
 # Configure logging
@@ -34,6 +40,9 @@ VALID_LOG_LEVELS = {
     'ERROR': logging.ERROR,
     'CRITICAL': logging.CRITICAL
 }
+
+# Database instance
+db_service = SQLiteDataService("data/observations.db")
 
 
 def get_current_log_level() -> str:
@@ -172,6 +181,90 @@ async def set_log_level_endpoint(
     )
 
 
+@app.get("/data/sessions", response_model=List[str])
+async def get_all_sessions(
+    user: str = Depends(authenticate_user)
+) -> List[str]:
+    """Get all unique sessions from the database.
+    
+    Args:
+        user: Authenticated user (from dependency injection).
+        
+    Returns:
+        List[str]: List of all sessions.
+    """
+    try:
+        session_ids = db_service.get_all_sessions()
+        return session_ids
+    
+    except Exception as e:
+        logger.error(f"Error retrieving sessions: {e}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve sessions"
+        )
+
+
+@app.get("/data/events", response_model=EventsResponse)
+async def get_all_events(
+    user: str = Depends(authenticate_user),
+    limit: Optional[int] = Query(None, ge=1, le=10000, description="Maximum number of events to return"),
+    session_id: Optional[str] = Query(None, description="Filter by session ID")
+) -> EventsResponse:
+    """Get all events from the database with optional filters.
+    
+    Args:
+        user: Authenticated user (from dependency injection).
+        limit: Maximum number of events to return (1-10000).
+        session_id: Optional session ID filter.
+        
+    Returns:
+        EventsResponse: List of events with optional filters applied.
+    """
+    try:
+        events_data = db_service.get_observations_by_session(session_id)
+        
+        events = []
+        for event in events_data:
+            # Parse the JSON data field
+            try:
+                data = json.loads(event['data']) if event['data'] else {}
+            except json.JSONDecodeError:
+                data = {}
+            
+            events.append(EventInfo(
+                id=event['id'],
+                event_type=event['event_type'],
+                symbol=event['symbol'],
+                user_address=event['user_address'],
+                session_id=event['session_id'],
+                timestamp=event['timestamp'],
+                oid=event['oid'],
+                price=event['price'],
+                status=event['status'],
+                created_at=event['created_at'],
+                data=data
+            ))
+        
+        logger.info(f"User {user} retrieved {len(events)} events (limit: {limit}, session: {session_id})")
+        
+        return EventsResponse(
+            success=True,
+            events=events,
+            total_events=len(events),
+            session_id=session_id,
+            limit=limit
+        )
+    
+    except Exception as e:
+        logger.error(f"Error retrieving events: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve events"
+        )
+
+
 @app.post("/observers/start", response_model=ObserverResponse)
 async def start_observer(
     request: ObserverStartRequest,
@@ -203,12 +296,6 @@ async def start_observer(
             observer_id=observer_id
         )
     
-    except ValueError as e:
-        # Observer already running for this address
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
     except Exception as e:
         logger.error(f"Failed to start observer for {request.address}: {e}")
         raise HTTPException(
@@ -222,7 +309,7 @@ async def stop_observer(
     observer_id: str,
     user: str = Depends(authenticate_user)
 ) -> ObserverResponse:
-    """Stop an observer instance.
+    """Stop a specific observer.
     
     Args:
         observer_id: The ID of the observer to stop.
@@ -232,22 +319,32 @@ async def stop_observer(
         ObserverResponse: Response with success status.
         
     Raises:
-        HTTPException: If the observer is not found.
+        HTTPException: If the observer doesn't exist or fails to stop.
     """
-    success = observer_service.stop_observer(observer_id)
-    
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Observer {observer_id} not found"
+    try:
+        success = observer_service.stop_observer(observer_id)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Observer {observer_id} not found"
+            )
+        
+        logger.info(f"User {user} stopped observer {observer_id}")
+        
+        return ObserverResponse(
+            success=True,
+            message=f"Observer {observer_id} stopped successfully"
         )
     
-    logger.info(f"User {user} stopped observer {observer_id}")
-    
-    return ObserverResponse(
-        success=True,
-        message=f"Observer {observer_id} stopped successfully"
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to stop observer {observer_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to stop observer: {str(e)}"
+        )
 
 
 @app.get("/observers/{observer_id}/status", response_model=ObserverStatusResponse)
@@ -258,61 +355,83 @@ async def get_observer_status(
     """Get the status of a specific observer.
     
     Args:
-        observer_id: The ID of the observer.
+        observer_id: The ID of the observer to check.
         user: Authenticated user (from dependency injection).
         
     Returns:
         ObserverStatusResponse: Observer status information.
         
     Raises:
-        HTTPException: If the observer is not found.
+        HTTPException: If the observer doesn't exist.
     """
-    instance = observer_service.get_observer_status(observer_id)
-    
-    if not instance:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Observer {observer_id} not found"
+    try:
+        observer_info = observer_service.get_observer_status(observer_id)
+        
+        if not observer_info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Observer {observer_id} not found"
+            )
+        
+        return ObserverStatusResponse(
+            observer_id=observer_id,
+            address=observer_info.get("address", "unknown"),
+            algo_type=observer_info.get("algo_type", "unknown"),
+            status=observer_info.get("status", "unknown"),
+            start_time=observer_info.get("start_time", "unknown"),
+            last_message_time=observer_info.get("last_message_time")
         )
     
-    return ObserverStatusResponse(
-        observer_id=instance.observer_id,
-        address=instance.address,
-        status=instance.status,
-        algo_type=instance.algo_type
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get observer status for {observer_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get observer status: {str(e)}"
+        )
 
 
 @app.get("/observers", response_model=List[ObserverStatusResponse])
 async def list_observers(
     user: str = Depends(authenticate_user)
 ) -> List[ObserverStatusResponse]:
-    """List all observer instances.
+    """List all observers and their status.
     
     Args:
         user: Authenticated user (from dependency injection).
         
     Returns:
-        List[ObserverStatusResponse]: List of all observer instances.
+        List[ObserverStatusResponse]: List of all observers and their status.
     """
-    observers = observer_service.list_observers()
+    try:
+        observers = observer_service.list_observers()
+        
+        return [
+            ObserverStatusResponse(
+                observer_id=obs_id,
+                address=obs_info.get("address", "unknown"),
+                algo_type=obs_info.get("algo_type", "unknown"),
+                status=obs_info.get("status", "unknown"),
+                start_time=obs_info.get("start_time", "unknown"),
+                last_message_time=obs_info.get("last_message_time")
+            )
+            for obs_id, obs_info in observers.items()
+        ]
     
-    return [
-        ObserverStatusResponse(
-            observer_id=instance.observer_id,
-            address=instance.address,
-            status=instance.status,
-            algo_type=instance.algo_type
+    except Exception as e:
+        logger.error(f"Failed to list observers: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list observers: {str(e)}"
         )
-        for instance in observers.values()
-    ]
 
 
 @app.post("/observers/stop-all", response_model=ObserverResponse)
 async def stop_all_observers(
     user: str = Depends(authenticate_user)
 ) -> ObserverResponse:
-    """Stop all running observers.
+    """Stop all active observers.
     
     Args:
         user: Authenticated user (from dependency injection).
@@ -320,14 +439,22 @@ async def stop_all_observers(
     Returns:
         ObserverResponse: Response with success status.
     """
-    observer_service.stop_all_observers()
+    try:
+        count = observer_service.stop_all_observers()
+        
+        logger.info(f"User {user} stopped all observers ({count} stopped)")
+        
+        return ObserverResponse(
+            success=True,
+            message=f"All observers stopped successfully ({count} observers)"
+        )
     
-    logger.info(f"User {user} stopped all observers")
-    
-    return ObserverResponse(
-        success=True,
-        message="All observers stopped successfully"
-    )
+    except Exception as e:
+        logger.error(f"Failed to stop all observers: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to stop all observers: {str(e)}"
+        )
 
 
 @app.exception_handler(Exception)
@@ -335,7 +462,7 @@ async def global_exception_handler(request, exc: Exception) -> JSONResponse:
     """Global exception handler for unhandled exceptions.
     
     Args:
-        request: The HTTP request.
+        request: The FastAPI request object.
         exc: The unhandled exception.
         
     Returns:
@@ -346,9 +473,8 @@ async def global_exception_handler(request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
-            "success": False,
-            "message": "Internal server error",
-            "detail": str(exc)
+            "detail": "Internal server error",
+            "type": "internal_error"
         }
     )
 

@@ -47,7 +47,17 @@ import threading
 import time
 
 import certifi
-import websocket
+try:
+    import websocket
+    # Vérifier que WebSocketApp existe
+    if not hasattr(websocket, 'WebSocketApp'):
+        raise ImportError("websocket module doesn't have WebSocketApp")
+except ImportError:
+    # Fallback sur websocket-client si websocket n'a pas WebSocketApp
+    try:
+        import websocket_client as websocket
+    except ImportError:
+        raise ImportError("Neither 'websocket' with WebSocketApp nor 'websocket-client' is available")
 from dacite import from_dict
 
 from src.generic.hyperliquid_ws_model import WsMessage, WsOrder

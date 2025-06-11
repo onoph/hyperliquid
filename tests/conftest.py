@@ -3,7 +3,8 @@ from unittest.mock import MagicMock
 from src.generic.algo import Algo
 from src.generic.cctx_model import Order, Info
 from src.generic.cctx_api import Dex as CctxDex
-from hyperliquid.ccxt.base.types import OrderSide
+# Import local OrderSide type
+from src.generic.algo import OrderSide
 from src.generic.hyperliquid_ws_model import WsOrder
 
 # Helper to create mock Order objects

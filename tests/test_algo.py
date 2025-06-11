@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from src.generic.algo import Algo
 from src.generic.cctx_model import Order
 from src.generic.hyperliquid_ws_model import WsOrder
-from hyperliquid.ccxt.base.types import OrderSide
+from src.generic.algo import OrderSide
 from tests.conftest import make_real_order, make_real_wsorder
 
 def check_order(algo: Algo, price: float, side: OrderSide) -> None:

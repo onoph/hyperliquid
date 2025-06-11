@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 import time
 from pprint import pprint
-from typing import Literal
+from typing import Literal, Optional
 
 from src.generic.cctx_balance_model import AccountData
 from src.generic.hyperliquid_ws_model import WsOrder
+from src.data.interface import IData
+from src.data.position import Position
+from src.data.null_data import NullData
 
 
 @dataclass
@@ -63,7 +66,7 @@ from typing import Optional, Literal
 
 from src.generic.cctx_api import Dex
 from src.generic.cctx_model import Order
-
+import uuid
 import logging
 
 # Types pour les côtés d'ordre
@@ -111,14 +114,25 @@ class Algo:
     qtyDivider = 6 #TODO: set to 6
 
     event_id = 0
+    
+    # Interface de données et session ID
+    data_service: IData
+    session_id: str
 
     def get_gap(self):
         return self.GAPS[self.current_gap_idx]
 
-    def __init__(self, dex: Dex, max_leverage: int = 40):
+    def __init__(self, dex: Dex, data_service: IData, max_leverage: int = 40):
         self.dex = dex
         self.max_leverage = max_leverage
         self.coin_manager.setInitialCoinCount(self.nbCoins)
+        self.data_service = data_service
+        self.set_session_id()
+
+    def set_session_id(self):
+        """Set the session ID for the algorithm."""
+        self.session_id = str(uuid.uuid4())
+        self.logger.info(f"Session ID set to: {self.session_id}")
 
     # Initialize the algorithm by setting up initial positions
     def setup_initial_positions(self):
@@ -156,6 +170,27 @@ class Algo:
 
     def compute_coin_qty(self, perp_account_equity: float, current_price: float) -> float:
         return perp_account_equity / self.qtyDivider / current_price
+    
+    
+    def _create_position_from_ws_order(self, ws_order: WsOrder, side: str) -> Position:
+        """Crée un objet Position simplifié à partir d'un WsOrder"""
+        return Position(
+            symbol=ws_order.order.coin,
+            user_address=getattr(self.dex, 'get_user_address', lambda: "unknown")(),
+            side=side,
+            size=ws_order.order.sz,
+            entry_price=str(ws_order.order.limitPx)
+        )
+    
+    def _create_position_from_order_params(self, symbol: str, qty: float, price: float, side: str) -> Position:
+        """Crée un objet Position à partir des paramètres d'ordre"""
+        return Position(
+            symbol=symbol,
+            user_address=getattr(self.dex, 'get_user_address', lambda: "unknown")(),
+            side=side,
+            size=str(qty),
+            entry_price=str(price)
+        )
 
 
     def retrieve_previous_orders(self):
@@ -163,6 +198,7 @@ class Algo:
 
     def on_canceled_order(self, wsOrder: WsOrder):
         self.remove_from_previous_orders(str(wsOrder.order.oid))
+        # Note: Il faudrait ajouter une méthode on_canceled_order à l'interface IData
 
 
     def on_executed_order(self, wsOrder: WsOrder):
@@ -171,6 +207,9 @@ class Algo:
 
         order = wsOrder.order
         self.logger.info(f"{self.event_id}Order executed: {order.oid} - {order.side} at price {order.limitPx}")
+
+        # Enregistrer l'ordre exécuté
+        self.data_service.on_new_order(wsOrder, self.session_id)
 
         # manage internal state
         self.executed_orders_tracker.add_order(wsOrder)
@@ -198,6 +237,11 @@ class Algo:
     # we do the same as for open long executed, except we remove the previous open long order
     def handle_executed_close_long(self, perp_account_equity: float, wsOrder: WsOrder):
         self.logger.info(f"{self.event_id} --> Close long executed: {wsOrder.order.oid} at price {wsOrder.order.limitPx}")
+        
+        # Enregistrer la position de vente remplie
+        self.data_service.on_filled_sell_position(
+            self._create_position_from_ws_order(wsOrder, "SHORT"), self.session_id)
+        
         self.handle_common_close_open_long_executed(perp_account_equity, wsOrder)
         self.coin_manager.decrementCoinCount()
 
@@ -212,6 +256,11 @@ class Algo:
     # buying a coin means we must sell it later at a higher price
     def handle_executed_open_long(self, perp_account_equity: float, wsOrder: WsOrder):
         self.logger.info(f"{self.event_id} --> Open long executed: {wsOrder.order.oid} at price {wsOrder.order.limitPx}")
+        
+        # Enregistrer la position d'achat remplie
+        self.data_service.on_filled_buy_position(
+            self._create_position_from_ws_order(wsOrder, "LONG"), self.session_id)
+        
         self.handle_common_close_open_long_executed(perp_account_equity, wsOrder)
         self.coin_manager.incrementCoinCount()
 
@@ -243,6 +292,12 @@ class Algo:
             new_open_long = self.dex.create_open_long(qty=qty, price=price)
             self.logger.debug(f"{self.event_id} --> Open long order created: {new_open_long}")
             self.previous_orders.append(new_open_long)
+            
+            # Enregistrer la nouvelle position d'achat
+            symbol = getattr(new_open_long, 'symbol', "BTC-USD")
+            self.data_service.on_new_buy_position(
+                self._create_position_from_order_params(symbol, qty, price, "LONG"), self.session_id)
+            
             return new_open_long
         self.logger.info(f"{self.event_id} --> Open long order already exists at {price}")
         return None
@@ -251,8 +306,14 @@ class Algo:
         if not self.contains_close_long_at_price(price):
             self.logger.info(f"{self.event_id} --> Creating close long order: {qty} at {price}")
             new_close_long = self.dex.create_close_long(qty=qty, price=price)
-            self.logger.debug(f"{self.event_id} --> Open long order created: {new_close_long}")
+            self.logger.debug(f"{self.event_id} --> Close long order created: {new_close_long}")
             self.previous_orders.append(new_close_long)
+            
+            # Enregistrer la nouvelle position de vente
+            symbol = getattr(new_close_long, 'symbol', "BTC-USD")
+            self.data_service.on_new_sell_position(
+                self._create_position_from_order_params(symbol, qty, price, "SHORT"), self.session_id)
+            
             return new_close_long
         self.logger.info(f"{self.event_id} --> Close long order already exists at {price}")
         return None
