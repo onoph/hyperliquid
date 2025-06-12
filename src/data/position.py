@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime
 
 
@@ -12,7 +12,7 @@ class Position:
     user_address: str
     
     # Position details
-    side: str  # "LONG" ou "SHORT"
+    side: Literal['OPEN_LONG', 'CLOSE_LONG']  # Type de position
     size: str  # Taille de la position
     entry_price: Optional[str] = None  # Prix d'entrée moyen
     

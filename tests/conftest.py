@@ -19,8 +19,9 @@ def make_mock_order(price: float, side: OrderSide, qty: float = 0.1) -> Order:
         qty=qty
     )
 
-def make_real_order(price: float, side: OrderSide, qty: float = 0.1) -> Order:
-    hyperliquid_side = 'B' if side == 'buy' else 'A'
+def make_real_order(price: float, side: str, qty: float = 0.1) -> Order:
+    # On force le side à 'B' pour buy et 'A' pour sell, pour matcher la logique de l'algo
+    hyperliquid_side = 'B' if side in ('buy', 'B') else 'A'
     order = Order(
         info=Info(
             coin="BTC",
@@ -70,14 +71,14 @@ def make_real_order(price: float, side: OrderSide, qty: float = 0.1) -> Order:
     # Ajout des attributs dynamiques attendus par l'algo
     order.oid = order.id
     order.limitPx = order.price
+    order.coin = order.info.coin
+    order.sz = order.info.sz
     return order
 
-def make_real_wsorder(price: float, side: OrderSide, qty: float = 0.1) -> WsOrder:
-    return WsOrder(
-        order=make_real_order(price, side, qty),
-        status="open",
-        statusTimestamp=0
-    )
+def make_real_wsorder(price: float, side: str, qty: float = 0.1) -> WsOrder:
+    ws_order = MagicMock(spec=WsOrder)
+    ws_order.order = make_real_order(price, side, qty)
+    return ws_order
 
 @pytest.fixture
 def mock_dex():
