@@ -1,5 +1,5 @@
 modules = ["python-3.12"]
-run = "pip install -r requirements_prod.txt && uvicorn src.api.main:app --host 0.0.0.0 --port 3000"
+run = "uvicorn src.api.main:app --host 0.0.0.0 --port 5000"
 
 [nix]
 channel = "stable-24_05"
@@ -9,11 +9,11 @@ packages = ["borgbackup", "c-ares", "cacert", "cargo", "gdb", "gitFull", "glibcL
 run = [
   "sh",
   "-c",
-  "pip install -r requirements_prod.txt && uvicorn src.api.main:app --host 0.0.0.0 --port 3000",
+  "pip install -r requirements_prod.txt && uvicorn src.api.main:app --host 0.0.0.0 --port 5000",
 ]
 
 [[ports]]
-localPort = 3000
+localPort = 5000
 externalPort = 80
 
 [workflows]
@@ -26,4 +26,4 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "uvicorn src.api.main:app --host 0.0.0.0 --port 3000"
+args = "uvicorn src.api.main:app --host 0.0.0.0 --port 5000"
