@@ -172,27 +172,6 @@ class Algo:
         return perp_account_equity / self.qtyDivider / current_price
     
     
-    def _create_position_from_ws_order(self, ws_order: WsOrder, side: str) -> Position:
-        """Crée un objet Position simplifié à partir d'un WsOrder"""
-        return Position(
-            symbol=ws_order.order.coin,
-            user_address=getattr(self.dex, 'get_user_address', lambda: "unknown")(),
-            side=side,
-            size=ws_order.order.sz,
-            entry_price=str(ws_order.order.limitPx)
-        )
-    
-    def _create_position_from_order_params(self, symbol: str, qty: float, price: float, side: str) -> Position:
-        """Crée un objet Position à partir des paramètres d'ordre"""
-        return Position(
-            symbol=symbol,
-            user_address=getattr(self.dex, 'get_user_address', lambda: "unknown")(),
-            side=side,
-            size=str(qty),
-            entry_price=str(price)
-        )
-
-
     def retrieve_previous_orders(self):
         self.previous_orders = self.dex.get_open_orders()
 
@@ -203,7 +182,7 @@ class Algo:
 
     def on_executed_order(self, wsOrder: WsOrder):
         self.event_id += 1
-        pprint(f"{self.event_id} on_executed_order: {wsOrder}")
+        self.logger.info(f"{self.event_id} on_executed_order: {wsOrder}")
 
         order = wsOrder.order
         self.logger.info(f"{self.event_id}Order executed: {order.oid} - {order.side} at price {order.limitPx}")
@@ -217,12 +196,12 @@ class Algo:
 
         full_account_data  = self.dex.get_full_account_data()
         perp_account_equity = full_account_data.USDC.total
-        print(' --> in on_executed_order')
-        print(f" --> wsOrder.order.side: {wsOrder.order.side}")
         if wsOrder.order.side == 'B': # 'B' = Bid = buy
             self.handle_executed_open_long(perp_account_equity, wsOrder)
         elif wsOrder.order.side == 'A': # 'A' = Ask = sell
             self.handle_executed_close_long(perp_account_equity, wsOrder)
+        else:
+            self.logger.error(f"{self.event_id} --> Unknown order side: {wsOrder.order.side}")
 
     def remove_from_previous_orders(self, order_id: str):
         # log size before and after
@@ -238,10 +217,6 @@ class Algo:
     def handle_executed_close_long(self, perp_account_equity: float, wsOrder: WsOrder):
         self.logger.info(f"{self.event_id} --> Close long executed: {wsOrder.order.oid} at price {wsOrder.order.limitPx}")
         
-        # Enregistrer la position de vente remplie
-        self.data_service.on_filled_sell_position(
-            self._create_position_from_ws_order(wsOrder, "SHORT"), self.session_id)
-        
         self.handle_common_close_open_long_executed(perp_account_equity, wsOrder)
         self.coin_manager.decrementCoinCount()
 
@@ -251,18 +226,36 @@ class Algo:
             qty = 2 * self.compute_coin_qty(perp_account_equity, current_price)
             self.dex.buy_at_market_price(qty, current_price)
 
+        # Enregistrer la position de vente remplie
+        user_address = self.dex.get_user_address() if hasattr(self.dex, 'get_user_address') else "unknown"
+        self.data_service.on_filled_sell_position(
+            symbol=wsOrder.order.coin,
+            user_address=user_address,
+            side="SHORT",
+            qty=wsOrder.order.sz,
+            price=wsOrder.order.limitPx,
+            session_id=self.session_id
+        )
+
 
     # open long executed -> means the price has gone down and we have bought a coin
     # buying a coin means we must sell it later at a higher price
     def handle_executed_open_long(self, perp_account_equity: float, wsOrder: WsOrder):
         self.logger.info(f"{self.event_id} --> Open long executed: {wsOrder.order.oid} at price {wsOrder.order.limitPx}")
         
-        # Enregistrer la position d'achat remplie
-        self.data_service.on_filled_buy_position(
-            self._create_position_from_ws_order(wsOrder, "LONG"), self.session_id)
-        
         self.handle_common_close_open_long_executed(perp_account_equity, wsOrder)
         self.coin_manager.incrementCoinCount()
+
+        # Enregistrer la position d'achat remplie
+        user_address = self.dex.get_user_address() if hasattr(self.dex, 'get_user_address') else "unknown"
+        self.data_service.on_filled_buy_position(
+            symbol=wsOrder.order.coin,
+            user_address=user_address,
+            side="LONG",
+            qty=wsOrder.order.sz,
+            price=wsOrder.order.limitPx,
+            session_id=self.session_id
+        )
 
 
     def handle_common_close_open_long_executed(self, perp_account_equity: float, wsOrder: WsOrder):
@@ -288,16 +281,22 @@ class Algo:
 
     def create_open_long_order(self, qty: float, price: float) -> Order:
         if not self.contains_open_long_at_price(price):
-            self.logger.info(f"{self.event_id}Creating open long order: {qty} at {price}")
+            self.logger.info(f"{self.event_id} - Creating open long order: {qty} at {price}")
             new_open_long = self.dex.create_open_long(qty=qty, price=price)
             self.logger.debug(f"{self.event_id} --> Open long order created: {new_open_long}")
             self.previous_orders.append(new_open_long)
             
             # Enregistrer la nouvelle position d'achat
             symbol = getattr(new_open_long, 'symbol', "BTC-USD")
+            user_address = self.dex.get_user_address() if hasattr(self.dex, 'get_user_address') else "unknown"
             self.data_service.on_new_buy_position(
-                self._create_position_from_order_params(symbol, qty, price, "LONG"), self.session_id)
-            
+                symbol=symbol,
+                user_address=user_address,
+                side="LONG",
+                qty=qty,
+                price=price,
+                session_id=self.session_id
+            )
             return new_open_long
         self.logger.info(f"{self.event_id} --> Open long order already exists at {price}")
         return None
@@ -308,12 +307,18 @@ class Algo:
             new_close_long = self.dex.create_close_long(qty=qty, price=price)
             self.logger.debug(f"{self.event_id} --> Close long order created: {new_close_long}")
             self.previous_orders.append(new_close_long)
-            
+    
             # Enregistrer la nouvelle position de vente
             symbol = getattr(new_close_long, 'symbol', "BTC-USD")
+            user_address = self.dex.get_user_address() if hasattr(self.dex, 'get_user_address') else "unknown"
             self.data_service.on_new_sell_position(
-                self._create_position_from_order_params(symbol, qty, price, "SHORT"), self.session_id)
-            
+                symbol=symbol,
+                user_address=user_address,
+                side="SHORT",
+                qty=qty,
+                price=price,
+                session_id=self.session_id
+            )
             return new_close_long
         self.logger.info(f"{self.event_id} --> Close long order already exists at {price}")
         return None
@@ -321,14 +326,22 @@ class Algo:
     def remove_min_open_long_orders(self):
         min_open_long_orders = self.get_min_open_long_orders()
         for order in min_open_long_orders:
-            self.logger.info(f" --> Removing min open long order: {order.id}")
+            self.logger.info(f"{self.event_id} --> Removing min open long order: {order.id}")
             self.remove_order(order)
 
     def contains_open_long_at_price(self, price: float) -> bool:
-        return any(order for order in self.previous_orders if order.price == price and order.side == BUY)
-    
+        """Vérifie si un ordre d'achat existe au prix donné"""
+        for order in self.previous_orders:
+            if order.side == 'B' and float(order.limitPx) == price:
+                return True
+        return False
+
     def contains_close_long_at_price(self, price: float) -> bool:
-        return any(order for order in self.previous_orders if order.price == price and order.side == SELL)
+        """Vérifie si un ordre de vente existe au prix donné"""
+        for order in self.previous_orders:
+            if order.side == 'A' and float(order.limitPx) == price:
+                return True
+        return False
 
     def get_min_open_long_orders(self) -> [Order]:
         open_long_orders = [order for order in self.previous_orders if order.side == BUY or order.side == 'B']
