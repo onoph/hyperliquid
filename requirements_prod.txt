@@ -14,4 +14,12 @@ certifi==2025.4.26
 dacite==1.9.2
 
 # === Trading (seulement ccxt, pas hyperliquid-python-sdk) ===
-ccxt==4.4.82 
+ccxt==4.4.82
+
+# === Additional dependencies ===
+hyperliquid==0.4.66
+hyperliquid-python-sdk==0.15.0
+eth-account==0.13.7
+python-multipart==0.0.17
+aiohttp==3.10.11
+requests==2.32.3 
