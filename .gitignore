@@ -1,0 +1,40 @@
+# Environnement virtuel
+.venv/
+
+# Fichiers Python compilés
+__pycache__/
+*.py[cod]
+
+# Fichiers de logs et bases de données locales
+*.log
+*.sqlite3
+*.db
+
+# Fichiers de configuration temporaires
+.env
+.env.*
+.envrc
+
+# Fichiers/dossiers générés par tests ou outils
+*.pytest_cache/
+*.mypy_cache/
+*.ruff_cache/
+
+# Fichiers/dossiers de build Docker
+.dockerignore
+Dockerfile
+fly.toml
+FLY_DEPLOYMENT.md
+
+# Notebooks et outputs temporaires
+*.ipynb_checkpoints/
+
+# Fichiers système
+.DS_Store
+
+# Fichiers supprimés à ignorer
+env.example
+fix_observer_replit.py
+
+# Dossier de données locales
+src/generic/data/observations.db 
