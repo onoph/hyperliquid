@@ -1,0 +1,29 @@
+modules = ["python-3.12"]
+run = "pip install -r requirements_prod.txt && uvicorn src.api.main:app --host 0.0.0.0 --port 3000"
+
+[nix]
+channel = "stable-24_05"
+packages = ["borgbackup", "c-ares", "cacert", "cargo", "gdb", "gitFull", "glibcLocales", "gmp", "libffi", "libiconv", "libxcrypt", "openssl", "pkg-config", "rustc", "zeromq"]
+
+[deployment]
+run = [
+  "sh",
+  "-c",
+  "pip install -r requirements_prod.txt && uvicorn src.api.main:app --host 0.0.0.0 --port 3000",
+]
+
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[workflows]
+runButton = "FastAPI Server"
+
+[[workflows.workflow]]
+name = "FastAPI Server"
+author = 43613511
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "uvicorn src.api.main:app --host 0.0.0.0 --port 3000"
