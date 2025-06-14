@@ -56,35 +56,54 @@ class Dex:
             
         Returns:
             Order: Objet ordre parsé avec tous les détails
+            
+        Raises:
+            Exception: Si la création de l'ordre échoue
         """
         if params is None:
             params = {}
             
         self.logger.info(f"api - Creating {side} {order_type} order: {qty} at {price}")
         
-        # Créer l'ordre
-        order_creation_response = self.dex.create_order(
-            symbol=self.get_symbol(), 
-            type=order_type, 
-            side=side, 
-            amount=qty, 
-            price=price, 
-            params=params
-        )
-        
-        # Récupérer les détails complets de l'ordre si possible
-        if 'id' in order_creation_response and order_creation_response['id']:
+        try:
+            # Créer l'ordre
+            order_creation_response = self.dex.create_order(
+                symbol=self.get_symbol(), 
+                type=order_type, 
+                side=side, 
+                amount=qty, 
+                price=price, 
+                params=params
+            )
+            
+            if not order_creation_response:
+                raise Exception("Order creation returned empty response")
+                
+            self.logger.info(f"Order creation response: {order_creation_response}")
+            
+            # Vérifier que l'ordre a bien été créé
+            if 'id' not in order_creation_response or not order_creation_response['id']:
+                raise Exception(f"Order creation failed: {order_creation_response}")
+                
             order_id = order_creation_response['id']
+            
+            # Récupérer les détails complets de l'ordre
             try:
                 full_order = self.dex.fetch_order(order_id, self.get_symbol())
+                if not full_order:
+                    raise Exception(f"Could not fetch order details for {order_id}")
+                self.logger.info(f"Successfully fetched order details: {full_order}")
                 return parse_order(full_order)
             except Exception as e:
                 self.logger.warning(f"Could not fetch full order details for {order_id}: {e}")
                 # Fallback vers la réponse de création si fetch_order échoue
-                return parse_order(order_creation_response)
-        else:
-            self.logger.warning("Order creation response doesn't contain an ID")
-            return parse_order(order_creation_response)
+                parsed_order = parse_order(order_creation_response)
+                self.logger.info(f"Using creation response as fallback: {parsed_order}")
+                return parsed_order
+                
+        except Exception as e:
+            self.logger.error(f"Failed to create order: {e}")
+            raise
 
     def create_open_long(self, qty, price) -> Order:
         return self._create_and_fetch_order('limit', 'buy', qty, price)

@@ -4,8 +4,10 @@ from src.generic.cctx_mapper import safe_parse
 from src.generic.hyperliquid_ws_model import WsMessage, WsOrder
 from src.generic.algo import Algo
 
-
+import logging
 class HyperliquidObserver:
+    logger = logging.getLogger(__name__)
+
     def __init__(self, address: str, algo: Algo):
         self.address = address
         self.algo = algo

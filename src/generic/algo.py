@@ -196,9 +196,9 @@ class Algo:
 
         full_account_data  = self.dex.get_full_account_data()
         perp_account_equity = full_account_data.USDC.total
-        if wsOrder.order.side == 'B': # 'B' = Bid = buy
+        if self.isBuyOrder(wsOrder.order): # 'B' = Bid = buy
             self.handle_executed_open_long(perp_account_equity, wsOrder)
-        elif wsOrder.order.side == 'A': # 'A' = Ask = sell
+        elif self.isSellOrder(wsOrder.order): # 'A' = Ask = sell
             self.handle_executed_close_long(perp_account_equity, wsOrder)
         else:
             self.logger.error(f"{self.event_id} --> Unknown order side: {wsOrder.order.side}")
@@ -220,7 +220,7 @@ class Algo:
         self.handle_common_close_open_long_executed(perp_account_equity, wsOrder)
         self.coin_manager.decrementCoinCount()
 
-        if self.coin_manager.getCoinCount() < self.minNbCoins:
+        if self.coin_manager.getCoinCount() <= self.minNbCoins:
             self.logger.info(f"Coin count is below minimum ({self.minNbCoins}). Buying {2} coins at market price")
             current_price = wsOrder.order.limitPx
             qty = 2 * self.compute_coin_qty(perp_account_equity, current_price)
@@ -273,8 +273,8 @@ class Algo:
 
 
     def check_current_orders(self):
-        bad_one_open_long = len([o for o in self.previous_orders if o.side == BUY]) != 1
-        bad_close_long = len([o for o in self.previous_orders if o.side == SELL]) == 0
+        bad_one_open_long = len([o for o in self.previous_orders if self.isBuyOrder(o)]) != 1
+        bad_close_long = len([o for o in self.previous_orders if self.isSellOrder(o)]) == 0
         if bad_one_open_long or bad_close_long:
             self.logger.error(f"{self.event_id} - Bad orders state: one open long: {not bad_one_open_long}, close long: {not bad_close_long}")
 
@@ -331,20 +331,21 @@ class Algo:
 
     def contains_open_long_at_price(self, price: float) -> bool:
         """Vérifie si un ordre d'achat existe au prix donné"""
+        self.logger.info(f"{self.event_id} - previous orders : {self.previous_orders}")
         for order in self.previous_orders:
-            if order.side == 'B' and float(order.limitPx) == price:
+            if self.isBuyOrder(order) and float(order.price) == price:
                 return True
         return False
 
     def contains_close_long_at_price(self, price: float) -> bool:
         """Vérifie si un ordre de vente existe au prix donné"""
         for order in self.previous_orders:
-            if order.side == 'A' and float(order.limitPx) == price:
+            if self.isSellOrder(order) and float(order.price) == price:
                 return True
         return False
 
     def get_min_open_long_orders(self) -> [Order]:
-        open_long_orders = [order for order in self.previous_orders if order.side == BUY or order.side == 'B']
+        open_long_orders = [order for order in self.previous_orders if self.isBuyOrder(order)]
         open_long_orders.sort(key=lambda o: o.price)
         # Keep only the highest price open long order (most recent), remove all others
         if len(open_long_orders) > 1:
@@ -353,7 +354,7 @@ class Algo:
 
     def get_min_open_long_order(self) -> Optional[Order]:
         """Retrieves the open long order with min price from previous orders."""
-        open_long_orders = [order for order in self.previous_orders if order.side == BUY]
+        open_long_orders = [order for order in self.previous_orders if self.isBuyOrder(order)]
         open_long_orders.sort(key=lambda o: o.price)
         self.logger.debug(f"{self.event_id} - Open long orders: {open_long_orders}")
         return open_long_orders[0] if open_long_orders else None
@@ -401,10 +402,18 @@ class Algo:
         return not self.contains_close_long() and not self.contains_open_long()
 
     def contains_open_long(self):
-        return any(order for order in self.previous_orders if order.side == BUY)
+        return any(order for order in self.previous_orders if self.isBuyOrder(order))
 
     def contains_close_long(self):
-        return any(order for order in self.previous_orders if order.side == SELL)
+        return any(order for order in self.previous_orders if self.isSellOrder(order))
+
+    def isBuyOrder(self, order) -> bool:
+        """Vérifie si un ordre est un ordre d'achat."""
+        return order.side in ['B', 'buy', BUY]
+
+    def isSellOrder(self, order) -> bool:
+        """Vérifie si un ordre est un ordre de vente."""
+        return order.side in ['A', 'sell', SELL]
 
     class LazyCurrentPrice:
         current_price: float = None

@@ -264,3 +264,52 @@ def test_contains_close_long_at_price_multiple(algo: Algo) -> None:
     assert algo.contains_close_long_at_price(99000)
     assert algo.contains_close_long_at_price(100000)
     assert not algo.contains_close_long_at_price(101000)
+
+def test_is_same_price() -> None:
+    """Test la comparaison de prix flottants avec tolérance."""
+    from src.generic.algo import Algo
+    # Strictement égal
+    assert Algo.is_same_price(100.0, 100.0)
+    # Différence dans la tolérance
+    assert Algo.is_same_price(100.0000001, 100.0)
+    assert Algo.is_same_price(99.9999999, 100.0)
+    # Différence hors tolérance
+    assert not Algo.is_same_price(100.0001, 100.0)
+    assert not Algo.is_same_price(99.9998, 100.0)
+
+def test_scenario_open_close_long_sequence(algo: Algo, mock_dex) -> None:
+    """
+    Scénario :
+    - Prix initial 100000
+    - OL à 99k, CL à 101k
+    - Descend à 99k : CL exécuté, OL à 98k et CL à 100k créés
+    - Remonte à 100k : OL exécuté, il doit rester OL à 99k et CL à 101k
+    """
+    gap = 1000
+    initial_price = 100000
+    algo.GAPS = [gap]
+    algo.current_gap_idx = 0
+
+    # 1. État initial
+    ol_99k = make_real_order(99000, 'buy')
+    cl_101k = make_real_order(101000, 'sell')
+    algo.previous_orders = [ol_99k, cl_101k]
+
+    # 2. Descend à 99k (exécution du CL à 99k)
+    ws_cl_99k = make_real_wsorder(99000, 'sell')
+    algo.on_executed_order(wsOrder=ws_cl_99k)
+    # On doit avoir OL à 98k et CL à 100k en plus
+    assert any(o for o in algo.previous_orders if Algo.is_same_price(o.price, 98000) and algo.isBuyOrder(o))
+    assert any(o for o in algo.previous_orders if Algo.is_same_price(o.price, 100000) and algo.isSellOrder(o))
+
+    # 3. Remonte à 100k (exécution de l'OL à 100k)
+    ws_ol_100k = make_real_wsorder(100000, 'buy')
+    algo.on_executed_order(wsOrder=ws_ol_100k)
+    # Il doit rester OL à 99k et CL à 101k
+    ol_99k_exists = any(o for o in algo.previous_orders if Algo.is_same_price(o.price, 99000) and algo.isBuyOrder(o))
+    cl_101k_exists = any(o for o in algo.previous_orders if Algo.is_same_price(o.price, 101000) and algo.isSellOrder(o))
+    assert ol_99k_exists, "Il doit rester un OL à 99k"
+    assert cl_101k_exists, "Il doit rester un CL à 101k"
+    # Il ne doit pas y avoir de doublons
+    assert sum(1 for o in algo.previous_orders if Algo.is_same_price(o.price, 99000) and algo.isBuyOrder(o)) == 1
+    assert sum(1 for o in algo.previous_orders if Algo.is_same_price(o.price, 101000) and algo.isSellOrder(o)) == 1
