@@ -1,9 +1,15 @@
 #!/bin/bash
 
+# Installation des dépendances
+echo "Installing dependencies..."
+pip install -r requirements.txt
+
 # Crée le dossier logs s'il n'existe pas
 mkdir -p logs
 
-source .venv/bin/activate
+# Variables d'environnement pour Replit
+export PYTHONPATH=$PYTHONPATH:.
 
 # Lance l'application
-PYTHONPATH=$PYTHONPATH:. python src/generic/main.py
+echo "Starting Hyperliquid Trading Bot..."
+python src/generic/main.py
