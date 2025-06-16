@@ -97,7 +97,7 @@ class CoinManager:
 class Algo:
     logger = logging.getLogger(__name__)
 
-    GAPS = [100, 500, 1000, 1500, 2000, 2500, 3000] # gap price to 100 for testing
+    GAPS = [50, 100, 500, 1000, 1500, 2000, 2500, 3000] # gap price to 100 for testing
     current_gap_idx = 0
 
     max_leverage = 40
@@ -119,20 +119,15 @@ class Algo:
     data_service: IData
     session_id: str
 
-    def get_gap(self):
-        return self.GAPS[self.current_gap_idx]
-
-    def __init__(self, dex: Dex, data_service: IData, max_leverage: int = 40):
+    def __init__(self, dex: Dex, session_id: str, data_service: IData, max_leverage: int = 40):
         self.dex = dex
         self.max_leverage = max_leverage
         self.coin_manager.setInitialCoinCount(self.nbCoins)
         self.data_service = data_service
-        self.set_session_id()
+        self.session_id = session_id
 
-    def set_session_id(self):
-        """Set the session ID for the algorithm."""
-        self.session_id = str(uuid.uuid4())
-        self.logger.info(f"Session ID set to: {self.session_id}")
+    def get_gap(self):
+        return self.GAPS[self.current_gap_idx]
 
     # Initialize the algorithm by setting up initial positions
     def setup_initial_positions(self):

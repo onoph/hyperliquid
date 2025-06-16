@@ -40,7 +40,7 @@ def main():
     setup_production_environment()
     
     # Import and run the FastAPI app
-    from src.api.main import app
+    from main_api import app
     import uvicorn
     
     # For PythonAnywhere, we typically don't run uvicorn directly

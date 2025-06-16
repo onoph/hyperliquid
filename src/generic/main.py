@@ -68,6 +68,10 @@ def main():
     # Démarrer le monitoring
     monitor.start_monitoring()
     
+    from dotenv import load_dotenv
+    load_dotenv()
+    address = os.getenv('ADDRESS')
+
     try:
         # Initialisation des composants
         logger.info("Initialisation des composants...")
@@ -82,7 +86,7 @@ def main():
         # Création et démarrage de l'observateur
         logger.info("Création de l'observateur...")
         hyperliquid_observer = HyperliquidObserver(
-            address='0x765EaafC85566466EF63bc3D3e1f507526b6Cc82',
+            address=address,
             algo=algo
         )
         

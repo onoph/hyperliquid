@@ -18,19 +18,27 @@ class AccountDataOld:
     totalPositionValue: float
     positionMargin: float
 
+@dataclasses.dataclass
+class DexConfig:
+    symbol: str
+    marginCoin: str
+    isTest: bool
+    walletAddress: str
+    apiKey: str
+
 class Dex:
     buy = 'buy'
     sell = 'sell'
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, symbol: str, marginCoin: str):
-        self.symbol = symbol
-        self.marginCoin = marginCoin
+    def __init__(self, dex_config: DexConfig):
+        self.symbol = dex_config.symbol
+        self.marginCoin = dex_config.marginCoin
         self.dex = ccxt.hyperliquid({
-            'walletAddress': '0x765EaafC85566466EF63bc3D3e1f507526b6Cc82',
-            "privateKey": "0x208d00493f51713bd0c42979e66180d38ff0e128198a07c3dbd5231a53f44791",
-            'options': {'sandbox': True},
+            'walletAddress': dex_config.walletAddress,
+            "privateKey": dex_config.apiKey,
+            'options': {'sandbox': dex_config.isTest},
         })
         self.previous_orders = []
 

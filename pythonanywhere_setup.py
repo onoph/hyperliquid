@@ -123,7 +123,7 @@ logging.basicConfig(
 )
 
 # Importer l'application
-from src.api.main import app as application
+from main_api import app as application
 """
     
     template_file = Path(f"/home/{username}/hyperliquid/wsgi_template.py")
@@ -143,7 +143,7 @@ def test_api_import():
     print("🧪 Test d'importation de l'API...")
     
     try:
-        from src.api.main import app
+        from main_api import app
         print("✅ API importée avec succès")
         return True
     except ImportError as e:

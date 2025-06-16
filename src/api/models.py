@@ -10,6 +10,9 @@ class ObserverStartRequest(BaseModel):
     
     address: str = Field(..., description="The address to observe")
     algo_type: str = Field(default="basic", description="The algorithm type to use")
+    is_test: bool = Field(default=True, description="Whether this is a test environment")
+    max_leverage: int = Field(default=40, description="The maximum leverage to use")
+    api_key: str = Field(..., description="The API key to use")
 
 
 class ObserverResponse(BaseModel):

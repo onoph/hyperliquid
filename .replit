@@ -1,15 +1,15 @@
-entrypoint = "launch.sh"
-# modules = ["python-3.12"]
-modules = ["python-3.11"]
-# run = "uvicorn src.api.main:app --host 0.0.0.0 --port 5000"
+# entrypoint = "launch.sh"
+modules = ["python-3.12"]
+# modules = ["python-3.11"]
+run = "uvicorn main_api:app --host 0.0.0.0 --port 5000"
 
 [nix]
 channel = "stable-24_05"
 packages = ["borgbackup", "c-ares", "cacert", "cargo", "gdb", "gitFull", "glibcLocales", "gmp", "libffi", "libiconv", "libxcrypt", "openssl", "pkg-config", "rustc", "zeromq"]
 
 [deployment]
-# run = ["sh", "-c", "pip install -r requirements_prod.txt && uvicorn src.api.main:app --host 0.0.0.0 --port 5000"]
-run = ["bash", "launch.sh"]
+run = ["sh", "-c", "pip install -r requirements_prod.txt && uvicorn main_api:app --host 0.0.0.0 --port 5000"]
+# run = ["bash", "launch.sh"]
 deploymentTarget = "cloudrun"
 
 [env]
@@ -29,4 +29,4 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "uvicorn src.api.main:app --host 0.0.0.0 --port 5000"
+args = "uvicorn main_api:app --host 0.0.0.0 --port 5000"

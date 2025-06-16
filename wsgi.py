@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(project_home, '.env'))
 
 # Importer l'application FastAPI
-from src.api.main import app
+from main_api import app
 
 # Pour PythonAnywhere, nous devons utiliser une application WSGI
 application = app 

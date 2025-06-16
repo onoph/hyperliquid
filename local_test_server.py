@@ -46,7 +46,7 @@ def main():
     
     try:
         # Importer l'application comme le ferait PythonAnywhere
-        from src.api.main import app
+        from main_api import app
         import uvicorn
         
         print("✅ Application importée avec succès")

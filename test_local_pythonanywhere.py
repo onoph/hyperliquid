@@ -38,7 +38,7 @@ def test_wsgi_import():
         # Simuler l'importation comme PythonAnywhere
         sys.path.insert(0, os.getcwd())
         
-        from src.api.main import app
+        from main_api import app
         print("✅ Application FastAPI importée avec succès")
         
         # Tester que l'app est bien une instance FastAPI
@@ -93,7 +93,7 @@ def start_test_server():
     
     try:
         import uvicorn
-        from src.api.main import app
+        from main_api import app
         
         # Démarrer le serveur en mode test (non-bloquant dans un processus)
         import multiprocessing
@@ -214,7 +214,7 @@ def test_wsgi_simulation():
         load_dotenv()
         
         # Simuler l'importation de l'application
-        from src.api.main import app as application
+        from main_api import app as application
         
         # Vérifier que c'est bien une application WSGI/ASGI
         if hasattr(application, '__call__'):

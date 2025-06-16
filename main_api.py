@@ -285,7 +285,10 @@ async def start_observer(
     try:
         observer_id = observer_service.start_observer(
             address=request.address,
-            algo_type=request.algo_type
+            is_test=request.is_test,
+            max_leverage=request.max_leverage,
+            algo_type=request.algo_type,
+            api_key=request.api_key
         )
         
         logger.info(f"User {user} started observer {observer_id} for {request.address}")
@@ -325,6 +328,7 @@ async def stop_observer(
         success = observer_service.stop_observer(observer_id)
         
         if not success:
+            logger.warning(f"Observer {observer_id} not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Observer {observer_id} not found"
@@ -375,11 +379,12 @@ async def get_observer_status(
         
         return ObserverStatusResponse(
             observer_id=observer_id,
-            address=observer_info.get("address", "unknown"),
-            algo_type=observer_info.get("algo_type", "unknown"),
-            status=observer_info.get("status", "unknown"),
-            start_time=observer_info.get("start_time", "unknown"),
-            last_message_time=observer_info.get("last_message_time")
+            address=observer_info.address,
+            algo_type=observer_info.algo_type,
+            status=observer_info.status,
+            testnet=observer_info.testnet,
+            coin=observer_info.coin,
+            symbol=observer_info.symbol
         )
     
     except HTTPException:
@@ -392,32 +397,21 @@ async def get_observer_status(
         )
 
 
-@app.get("/observers", response_model=List[ObserverStatusResponse])
+@app.get("/observers")
 async def list_observers(
     user: str = Depends(authenticate_user)
-) -> List[ObserverStatusResponse]:
+) -> Dict[str, Dict[str, Any]]:
     """List all observers and their status.
     
     Args:
         user: Authenticated user (from dependency injection).
         
     Returns:
-        List[ObserverStatusResponse]: List of all observers and their status.
+        Dict[str, Dict[str, Any]]: Dictionary of all observer instances.
     """
     try:
-        observers = observer_service.list_observers()
-        
-        return [
-            ObserverStatusResponse(
-                observer_id=obs_id,
-                address=obs_info.get("address", "unknown"),
-                algo_type=obs_info.get("algo_type", "unknown"),
-                status=obs_info.get("status", "unknown"),
-                start_time=obs_info.get("start_time", "unknown"),
-                last_message_time=obs_info.get("last_message_time")
-            )
-            for obs_id, obs_info in observers.items()
-        ]
+        observers = observer_service.list_observers_serializable()
+        return observers
     
     except Exception as e:
         logger.error(f"Failed to list observers: {e}")
@@ -440,13 +434,14 @@ async def stop_all_observers(
         ObserverResponse: Response with success status.
     """
     try:
-        count = observer_service.stop_all_observers()
+        observer_service.stop_all_observers()
+        count = observer_service.get_active_count()
         
-        logger.info(f"User {user} stopped all observers ({count} stopped)")
+        logger.info(f"User {user} stopped all observers")
         
         return ObserverResponse(
             success=True,
-            message=f"All observers stopped successfully ({count} observers)"
+            message=f"All observers stopped successfully"
         )
     
     except Exception as e:
@@ -481,8 +476,19 @@ async def global_exception_handler(request, exc: Exception) -> JSONResponse:
 
 if __name__ == "__main__":
     import uvicorn
+    import signal
+    import sys
+    
+    def signal_handler(sig, frame):
+        logger.info("Received interrupt signal, stopping all observers...")
+        observer_service.stop_all_observers()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     uvicorn.run(
-        "src.api.main:app",
+        "main_api:app",
         host="0.0.0.0",
         port=8000,
         reload=True,

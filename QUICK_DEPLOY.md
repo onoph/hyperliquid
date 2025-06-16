@@ -64,7 +64,7 @@ curl -X POST https://yourusername.pythonanywhere.com/logs/level \
 ### Problème d'importation
 ```bash
 cd ~/hyperliquid
-python3.10 -c "from src.api.main import app; print('✅ OK')"
+python3.10 -c "from main_api import app; print('✅ OK')"
 ```
 
 ### Vérifier les dépendances

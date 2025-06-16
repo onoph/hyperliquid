@@ -116,7 +116,7 @@ import sys, os
 sys.path.insert(0, os.getcwd())
 from dotenv import load_dotenv
 load_dotenv()
-from src.api.main import app
+from main_api import app
 print('✅ Import WSGI réussi')
 print(f'App type: {type(app)}')
 "
@@ -138,7 +138,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Importer l'application
-from src.api.main import app as application
+from main_api import app as application
 ```
 
 ## 🛠️ Dépannage

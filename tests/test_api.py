@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 
-from src.api.main import app
+from main_api import app
 from src.api.service import observer_service
 
 

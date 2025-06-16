@@ -8,19 +8,20 @@ import logging
 class HyperliquidObserver:
     logger = logging.getLogger(__name__)
 
-    def __init__(self, address: str, algo: Algo):
+    def __init__(self, address: str, observer_id: str, websocket_url: str, algo: Algo):
         self.address = address
+        self.observer_id = observer_id
         self.algo = algo
         self.hyperliquid_ws = HyperliquidWebSocket(
-            url="wss://api.hyperliquid-testnet.xyz/ws",
+            url=websocket_url,
             address=address,
             observer=self
         )
 
     def handle_order_updates(self, ws_orders: [WsOrder]):
-        self.logger.debug(f"Received {len(ws_orders)} order updates")
+        self.logger.debug(f"Observer {self.observer_id} received {len(ws_orders)} order updates")
         for ws_order in ws_orders:
-            self.logger.debug(f"Processing order: {ws_order}")
+            self.logger.debug(f"Observer {self.observer_id} processing order: {ws_order}")
             try:
                 #if order.status == 'deleted':
                 #    self.algo.on_deleted_order(order)
@@ -29,7 +30,7 @@ class HyperliquidObserver:
                 else:
                     pass
             except Exception as e:
-                self.logger.error(f"Error processing order {ws_order.order.oid if hasattr(ws_order.order, 'oid') else 'unknown'}: {e}")
+                self.logger.error(f"Observer {self.observer_id} error processing order {ws_order.order.oid if hasattr(ws_order.order, 'oid') else 'unknown'}: {e}")
                 self.logger.error(traceback.format_exc())
 
 
@@ -37,10 +38,9 @@ class HyperliquidObserver:
         self.hyperliquid_ws.start_watch()
 
     def stop(self):
-        print("Stopping HyperliquidObserver...")
-        self.running = False
-        if self.hyperliquid_ws.ws:
-            self.hyperliquid_ws.ws.close()
+        self.logger.info(f"Observer {self.observer_id} stopping HyperliquidObserver for address {self.address}")
+        self.hyperliquid_ws.stop()
+        self.logger.info(f"Observer {self.observer_id} HyperliquidObserver stopped successfully for address {self.address}")
 
 
 import json
@@ -136,6 +136,14 @@ class HyperliquidWebSocket:
 
     def on_close(self, ws, close_status_code, close_msg):
         print("WebSocket fermé :", close_status_code, close_msg)
+        
+    def stop(self):
+        """Stop the WebSocket connection properly."""
+        self.logger.info("Stopping WebSocket connection")
+        self.running = False
+        if self.ws:
+            self.ws.close()
+        self.logger.info("WebSocket stopped")
 
     def on_open(self, ws):
         print("WebSocket connecté avec succès")
@@ -156,10 +164,13 @@ class HyperliquidWebSocket:
         threading.Thread(target=self.run_ping, daemon=True).start()
 
     def run_ping(self):
-        while True:
+        while self.running:
             time.sleep(10)
+            if not self.running:
+                break
             try:
-                self.ws.send(json.dumps({"method": "ping"}))
+                if self.ws:
+                    self.ws.send(json.dumps({"method": "ping"}))
             except Exception as e:
                 self.logger.error(f"Erreur ping : {e}")
                 self.logger.error(traceback.format_exc())

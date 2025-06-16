@@ -83,7 +83,7 @@ logging.basicConfig(
 )
 
 # Importer l'application
-from src.api.main import app as application
+from main_api import app as application
 ```
 
 ### 5. Configuration finale
@@ -113,7 +113,7 @@ curl -u votre_username:votre_password https://yourusername.pythonanywhere.com/ob
 /home/yourusername/hyperliquid/
 ├── src/
 │   ├── api/
-│   │   ├── main.py          # Application FastAPI
+│   ├── main_api.py      # Application FastAPI
 │   │   ├── models.py
 │   │   ├── auth.py
 │   │   └── service.py
