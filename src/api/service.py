@@ -27,6 +27,7 @@ class ObserverInstance:
     observer_id: str
     address: str
     testnet: bool
+    gap: int
     coin: str
     symbol: str
     algo_type: str
@@ -44,6 +45,7 @@ class ObserverInstance:
             "observer_id": self.observer_id,
             "address": self.address,
             "testnet": self.testnet,
+            "gap": self.gap,
             "coin": self.coin,
             "symbol": self.symbol,
             "algo_type": self.algo_type,
@@ -66,7 +68,7 @@ class ObserverService:
         import atexit
         atexit.register(self._cleanup_on_exit)
     
-    def start_observer(self, address: str, is_test: bool, api_key: str, max_leverage: int = None, algo_type: str = "default") -> str:
+    def start_observer(self, address: str, is_test: bool, gap: int, api_key: str, max_leverage: int = None, algo_type: str = "default") -> str:
         """Start a new observer for the given address.
         
         Args:
@@ -85,7 +87,7 @@ class ObserverService:
             
             try:
                 observer_id = 'obs_' + address
-                algo = self._create_algo(algo_type, observer_id, DexConfig(symbol=SYMBOL, marginCoin=COIN, isTest=is_test, walletAddress=address, apiKey=api_key), max_leverage)
+                algo = self._create_algo(algo_type, gap, observer_id, DexConfig(symbol=SYMBOL, marginCoin=COIN, isTest=is_test, walletAddress=address, apiKey=api_key), max_leverage)
                 algo.recover_previous_state()
                 
                 websocket_url = config.get_websocket_url(is_test)
@@ -102,6 +104,7 @@ class ObserverService:
                 instance = ObserverInstance(
                     observer_id=observer_id,
                     address=address,
+                    gap=gap,
                     testnet=is_test,
                     coin=COIN,
                     symbol=SYMBOL,
@@ -151,6 +154,34 @@ class ObserverService:
                 logger.error(f"Error stopping observer {observer_id}: {e}")
                 return False
     
+    def delete_observer(self, observer_id: str) -> bool:
+        """Stop and delete an observer instance completely.
+        
+        Args:
+            observer_id: The observer instance ID to delete.
+            
+        Returns:
+            bool: True if the observer was deleted, False if not found.
+        """
+        with self._lock:
+            instance = self._observers.get(observer_id)
+            if not instance:
+                return False
+            
+            try:
+                # Stop the observer first
+                instance.observer.stop()
+                
+                # Remove from observers dict
+                del self._observers[observer_id]
+                
+                logger.info(f"Deleted observer {observer_id}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"Error deleting observer {observer_id}: {e}")
+                return False
+    
     def get_observer_status(self, observer_id: str) -> Optional[ObserverInstance]:
         """Get the status of an observer instance.
         
@@ -194,18 +225,44 @@ class ObserverService:
             return sum(1 for instance in self._observers.values() 
                       if instance.status == "running")
     
+    
     def stop_all_observers(self) -> None:
         """Stop all running observers."""
         with self._lock:
-            for observer_id in list(self._observers.keys()):
+            observer_ids = list(self._observers.keys())
+            
+        logger.info(f"Stopping {len(observer_ids)} observers...")
+        
+        for observer_id in observer_ids:
+            try:
+                logger.info(f"Stopping observer {observer_id}")
                 self.stop_observer(observer_id)
+                logger.info(f"Observer {observer_id} stopped")
+            except Exception as e:
+                logger.error(f"Error stopping observer {observer_id}: {e}")
+                
+        # Force cleanup - supprimer tous les observers même s'ils n'ont pas répondu
+        with self._lock:
+            remaining = list(self._observers.keys())
+            if remaining:
+                logger.warning(f"Force cleaning {len(remaining)} remaining observers")
+                for obs_id in remaining:
+                    try:
+                        instance = self._observers[obs_id]
+                        instance.observer.stop()
+                    except:
+                        pass
+                # Clear all
+                self._observers.clear()
+                
+        logger.info("All observers stopped and cleaned")
     
-    def _create_algo(self, algo_type: str, session_id: str, dex_config: DexConfig, max_leverage: int) -> Algo:
+    def _create_algo(self, algo_type: str, gap: int, session_id: str, dex_config: DexConfig, max_leverage: int) -> Algo:
         if algo_type == "default":
             # Use config values for algorithm creation
             dex = Dex(dex_config)
             data_service = SQLiteDataService(config.db_path)
-            return Algo(dex=dex, data_service=data_service, session_id=session_id, max_leverage=max_leverage)
+            return Algo(dex=dex, data_service=data_service, gap=gap, session_id=session_id, max_leverage=max_leverage)
         else:
             raise ValueError(f"Unsupported algorithm type: {algo_type}")
     
@@ -219,8 +276,16 @@ class ObserverService:
         try:
             logger.info(f"Starting observer thread for {observer_id}")
             observer.start()
+            
+            # L'observer.start() ne devrait jamais se terminer normalement
+            # Si on arrive ici, c'est qu'il y a eu un problème
+            logger.warning(f"Observer {observer_id} start() method returned unexpectedly")
+            
         except Exception as e:
             logger.error(f"Observer {observer_id} crashed: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
             # Update status
             with self._lock:
                 if observer_id in self._observers:
@@ -230,8 +295,8 @@ class ObserverService:
             # Ensure cleanup
             try:
                 observer.stop()
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Error stopping observer {observer_id}: {e}")
 
 
     def check_no_observer_for_address_or_fail(self, address: str): 

@@ -13,6 +13,7 @@ class ObserverStartRequest(BaseModel):
     is_test: bool = Field(default=True, description="Whether this is a test environment")
     max_leverage: int = Field(default=40, description="The maximum leverage to use")
     api_key: str = Field(..., description="The API key to use")
+    gap: int = Field(default=500, description="The gap to use")
 
 
 class ObserverResponse(BaseModel):

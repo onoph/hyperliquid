@@ -35,7 +35,16 @@ class HyperliquidObserver:
 
 
     def start(self):
+        """Start the observer and keep it running."""
+        self.logger.info(f"Starting HyperliquidObserver for {self.address}")
         self.hyperliquid_ws.start_watch()
+        
+        # Garder le thread principal vivant tant que le WebSocket tourne
+        import time
+        while self.hyperliquid_ws.running:
+            time.sleep(1)
+            
+        self.logger.warning(f"HyperliquidObserver for {self.address} stopping (WebSocket stopped)")
 
     def stop(self):
         self.logger.info(f"Observer {self.observer_id} stopping HyperliquidObserver for address {self.address}")
@@ -97,52 +106,101 @@ class HyperliquidWebSocket:
         websocket.enableTrace(False)
         while self.running:
             try:
+                self.logger.info("Connecting to WebSocket...")
                 self.ws.run_forever(
                     sslopt={"cert_reqs": ssl.CERT_REQUIRED, "ca_certs": certifi.where()},)
 
                 if not self.running:
+                    self.logger.info("WebSocket run loop stopped (running=False)")
                     break
+                else:
+                    self.logger.warning("WebSocket run_forever ended but running=True, attempting reconnect...")
+                    self._attempt_reconnect()
             except Exception as e:
-                self.logger.error(f"WebSocket error: {e}")
-                self._attempt_reconnect()
+                self.logger.error(f"WebSocket run_forever error: {e}")
+                if self.running:
+                    self._attempt_reconnect()
+                else:
+                    break
 
     def _attempt_reconnect(self):
+        if not self.running:
+            self.logger.info("Reconnection aborted: observer is stopping")
+            return
+            
         if self.reconnect_count >= self.max_reconnect_attempts:
             self.logger.error(f"Échec après {self.reconnect_count} tentatives de reconnexion. Abandon.")
             self.running = False
             return
 
-        delay = min(60, self.reconnect_delay * (2 ** self.reconnect_count))  # Exponential backoff
-        self.logger.info(f"Tentative de reconnexion dans {delay:.2f} secondes...")
-        time.sleep(delay)
         self.reconnect_count += 1
-        self.logger.info(f"Tentative de reconnexion #{self.reconnect_count}...")
-
+        delay = min(60, self.reconnect_delay * (2 ** (self.reconnect_count - 1)))  # Exponential backoff
+        self.logger.info(f"Tentative de reconnexion #{self.reconnect_count} dans {delay:.2f} secondes...")
+        
+        for i in range(int(delay * 10)):  # Check every 0.1s if we should stop
+            if not self.running:
+                self.logger.info("Reconnection cancelled: observer is stopping")
+                return
+            time.sleep(0.1)
+        
+        if not self.running:
+            return
+            
+        self.logger.info(f"Reconnecting to WebSocket (attempt #{self.reconnect_count})...")
+        
+        # Nettoyer l'ancienne connexion
+        if self.ws:
+            try:
+                self.ws.close()
+            except:
+                pass
+        
         # Recréer un nouveau WebSocketApp pour la reconnexion
         self._setup_websocket()
 
     def on_message(self, ws, message):
-        msg = json.loads(message)
-        channel = msg.get("channel")
-        self.logger.debug(f"Received message: {msg}")
-        if channel == "orderUpdates":
-            order_updates = safe_parse(WsMessage[WsOrder], msg)
-            self.observer.handle_order_updates(order_updates.data)
-        #else:
-        #    ("Autre message :", msg)
+        if not self.running:
+            return
+            
+        try:
+            msg = json.loads(message)
+            channel = msg.get("channel")
+            self.logger.debug(f"Received message: {msg}")
+            if channel == "orderUpdates":
+                order_updates = safe_parse(WsMessage[WsOrder], msg)
+                self.observer.handle_order_updates(order_updates.data)
+            #else:
+            #    ("Autre message :", msg)
+        except Exception as e:
+            if self.running:  # Ne logger que si on devrait encore tourner
+                self.logger.error(f"Error processing message: {e}")
 
     def on_error(self, ws, error):
-        print("Erreur :", error)
+        if self.running:  # Ne logger que si on devrait encore tourner
+            self.logger.error(f"WebSocket error: {error}")
 
     def on_close(self, ws, close_status_code, close_msg):
-        print("WebSocket fermé :", close_status_code, close_msg)
+        if self.running:
+            self.logger.info(f"WebSocket closed: {close_status_code} - {close_msg}")
+        self.running = False  # S'assurer que running est à False
         
     def stop(self):
         """Stop the WebSocket connection properly."""
         self.logger.info("Stopping WebSocket connection")
         self.running = False
+        
+        # Attendre un peu que les threads se terminent
+        import time
+        time.sleep(0.1)
+        
         if self.ws:
-            self.ws.close()
+            try:
+                self.ws.close()
+            except Exception:
+                pass  # Ignorer les erreurs de fermeture
+            finally:
+                self.ws = None  # Nettoyer la référence
+        
         self.logger.info("WebSocket stopped")
 
     def on_open(self, ws):

@@ -119,12 +119,19 @@ class Algo:
     data_service: IData
     session_id: str
 
-    def __init__(self, dex: Dex, session_id: str, data_service: IData, max_leverage: int = 40):
+    def __init__(self, dex: Dex, gap: int, session_id: str, data_service: IData, max_leverage: int = 40):
         self.dex = dex
         self.max_leverage = max_leverage
         self.coin_manager.setInitialCoinCount(self.nbCoins)
         self.data_service = data_service
         self.session_id = session_id
+        self.set_gap_index(gap)
+        
+    def set_gap_index(self, gap_value: int):
+        self.current_gap_idx = self.GAPS.index(gap_value)
+        if self.current_gap_idx == -1:
+            raise ValueError(f"Gap value {gap_value} not found in GAPS")
+        
 
     def get_gap(self):
         return self.GAPS[self.current_gap_idx]

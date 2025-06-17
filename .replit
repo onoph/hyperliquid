@@ -1,6 +1,4 @@
-# entrypoint = "launch.sh"
 modules = ["python-3.12"]
-# modules = ["python-3.11"]
 run = "uvicorn main_api:app --host 0.0.0.0 --port 5000"
 
 [nix]
@@ -9,8 +7,6 @@ packages = ["borgbackup", "c-ares", "cacert", "cargo", "gdb", "gitFull", "glibcL
 
 [deployment]
 run = ["sh", "-c", "pip install -r requirements_prod.txt && uvicorn main_api:app --host 0.0.0.0 --port 5000"]
-# run = ["bash", "launch.sh"]
-deploymentTarget = "cloudrun"
 
 [env]
 PYTHONPATH = "."

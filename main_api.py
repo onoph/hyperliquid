@@ -23,6 +23,18 @@ from src.api.models import (
 from src.api.service import observer_service, ObserverInstance
 from src.data.db.sqlite_data_service import SQLiteDataService
 import json
+import atexit
+
+# Triple protection - atexit hook au niveau global
+def cleanup_on_exit():
+    """Cleanup function appelée à la fermeture du programme."""
+    logger.info("Program exit detected - stopping all observers (atexit)")
+    try:
+        observer_service.stop_all_observers()
+    except Exception as e:
+        logger.error(f"Error during atexit cleanup: {e}")
+
+atexit.register(cleanup_on_exit)
 
 
 # Configure logging
@@ -90,10 +102,19 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan events."""
     # Startup
     logger.info("Starting Hyperliquid Observer API")
-    yield
-    # Shutdown
-    logger.info("Shutting down Hyperliquid Observer API")
-    observer_service.stop_all_observers()
+    
+    try:
+        yield
+    finally:
+        # Shutdown - Cette section SERA toujours appelée même avec Ctrl+C
+        logger.info("Shutting down Hyperliquid Observer API - Stopping all observers...")
+        observer_service.stop_all_observers()
+        
+        # Attendre un peu que les observers s'arrêtent
+        import asyncio
+        await asyncio.sleep(1)
+        
+        logger.info("All observers stopped - API shutdown complete")
 
 
 app = FastAPI(
@@ -286,6 +307,7 @@ async def start_observer(
         observer_id = observer_service.start_observer(
             address=request.address,
             is_test=request.is_test,
+            gap=request.gap,
             max_leverage=request.max_leverage,
             algo_type=request.algo_type,
             api_key=request.api_key
@@ -307,6 +329,48 @@ async def start_observer(
         )
 
 
+def _handle_observer_action(observer_id: str, user: str, action: str, service_method) -> ObserverResponse:
+    """Helper function to handle observer actions (stop/delete).
+    
+    Args:
+        observer_id: The ID of the observer.
+        user: The authenticated user.
+        action: Action name for logging (e.g., "stop", "delete").
+        service_method: The service method to call.
+        
+    Returns:
+        ObserverResponse: Response with success status.
+        
+    Raises:
+        HTTPException: If the observer doesn't exist or action fails.
+    """
+    try:
+        success = service_method(observer_id)
+        
+        if not success:
+            logger.warning(f"Observer {observer_id} not found for {action}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Observer {observer_id} not found"
+            )
+        
+        logger.info(f"User {user} {action}ped observer {observer_id}")
+        
+        return ObserverResponse(
+            success=True,
+            message=f"Observer {observer_id} {action}ped successfully"
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to {action} observer {observer_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to {action} observer: {str(e)}"
+        )
+
+
 @app.post("/observers/{observer_id}/stop", response_model=ObserverResponse)
 async def stop_observer(
     observer_id: str,
@@ -324,31 +388,27 @@ async def stop_observer(
     Raises:
         HTTPException: If the observer doesn't exist or fails to stop.
     """
-    try:
-        success = observer_service.stop_observer(observer_id)
-        
-        if not success:
-            logger.warning(f"Observer {observer_id} not found")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Observer {observer_id} not found"
-            )
-        
-        logger.info(f"User {user} stopped observer {observer_id}")
-        
-        return ObserverResponse(
-            success=True,
-            message=f"Observer {observer_id} stopped successfully"
-        )
+    return _handle_observer_action(observer_id, user, "stop", observer_service.stop_observer)
+
+
+@app.delete("/observers/{observer_id}", response_model=ObserverResponse)
+async def delete_observer(
+    observer_id: str,
+    user: str = Depends(authenticate_user)
+) -> ObserverResponse:
+    """Delete a specific observer (stop and remove completely).
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to stop observer {observer_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to stop observer: {str(e)}"
-        )
+    Args:
+        observer_id: The ID of the observer to delete.
+        user: Authenticated user (from dependency injection).
+        
+    Returns:
+        ObserverResponse: Response with success status.
+        
+    Raises:
+        HTTPException: If the observer doesn't exist or fails to delete.
+    """
+    return _handle_observer_action(observer_id, user, "delet", observer_service.delete_observer)
 
 
 @app.get("/observers/{observer_id}/status", response_model=ObserverStatusResponse)
@@ -480,10 +540,12 @@ if __name__ == "__main__":
     import sys
     
     def signal_handler(sig, frame):
-        logger.info("Received interrupt signal, stopping all observers...")
+        logger.info(f"Received signal {sig}, stopping all observers...")
         observer_service.stop_all_observers()
+        logger.info("Signal handler finished - exiting")
         sys.exit(0)
     
+    # Double protection - handle signals même si uvicorn ne les gère pas correctement
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
